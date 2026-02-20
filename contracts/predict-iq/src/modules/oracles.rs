@@ -1,5 +1,5 @@
-use soroban_sdk::{Env, Symbol, contracttype, Address, BytesN};
-use crate::types::{OracleConfig, MarketStatus};
+use soroban_sdk::{Env, Symbol, contracttype};
+use crate::types::OracleConfig;
 use crate::errors::ErrorCode;
 
 #[contracttype]
@@ -17,7 +17,7 @@ pub struct PythPrice {
     pub publish_time: i64,
 }
 
-pub fn fetch_pyth_price(e: &Env, config: &OracleConfig) -> Result<PythPrice, ErrorCode> {
+pub fn fetch_pyth_price(_e: &Env, _config: &OracleConfig) -> Result<PythPrice, ErrorCode> {
     // In production, this would call the Pyth contract
     // For now, return a mock implementation that can be overridden in tests
     Err(ErrorCode::OracleFailure)
