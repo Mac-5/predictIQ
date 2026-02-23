@@ -37,4 +37,6 @@ pub enum ErrorCode {
     AlreadyVotedOnUpgrade = 130,
     InvalidWasmHash = 131,
     UpgradeFailed = 132,
+    ParentMarketNotResolved = 133,
+    ParentMarketInvalidOutcome = 134,
 }
