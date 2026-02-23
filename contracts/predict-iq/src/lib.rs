@@ -1,20 +1,14 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, Env, Address, String, Vec};
+use soroban_sdk::{contract, contractimpl, Address, Env, String, Vec};
 
-mod types;
 mod errors;
 mod modules;
 mod test;
-mod test_snapshot_voting;
-mod test_resolution_state_machine;
-mod test_multi_token;
-mod test_cancellation;
-mod test_referral;
-mod test_classic_assets;
+pub mod types;
 
-use crate::types::{ConfigKey, CircuitBreakerState};
-use crate::modules::admin;
 use crate::errors::ErrorCode;
+use crate::modules::admin;
+use crate::types::{CircuitBreakerState, ConfigKey};
 
 #[contract]
 pub struct PredictIQ;
@@ -25,10 +19,13 @@ impl PredictIQ {
         if e.storage().persistent().has(&ConfigKey::Admin) {
             return Err(ErrorCode::AlreadyInitialized);
         }
-        
+
         admin::set_admin(&e, admin);
         e.storage().persistent().set(&ConfigKey::BaseFee, &base_fee);
-        e.storage().persistent().set(&ConfigKey::CircuitBreakerState, &CircuitBreakerState::Closed);
+        e.storage().persistent().set(
+            &ConfigKey::CircuitBreakerState,
+            &CircuitBreakerState::Closed,
+        );
         Ok(())
     }
 
@@ -44,7 +41,10 @@ impl PredictIQ {
         deadline: u64,
         resolution_deadline: u64,
         oracle_config: crate::types::OracleConfig,
-        token_address: Address,
+        tier: crate::types::MarketTier,
+        native_token: Address,
+        parent_id: u64,
+        parent_outcome_idx: u32,
     ) -> Result<u64, ErrorCode> {
         crate::modules::markets::create_market(
             &e,
@@ -54,7 +54,10 @@ impl PredictIQ {
             deadline,
             resolution_deadline,
             oracle_config,
-            token_address,
+            tier,
+            native_token,
+            parent_id,
+            parent_outcome_idx,
         )
     }
 
@@ -82,7 +85,13 @@ impl PredictIQ {
         crate::modules::markets::get_market(&e, id)
     }
 
-    pub fn cast_vote(e: Env, voter: Address, market_id: u64, outcome: u32, weight: i128) -> Result<(), ErrorCode> {
+    pub fn cast_vote(
+        e: Env,
+        voter: Address,
+        market_id: u64,
+        outcome: u32,
+        weight: i128,
+    ) -> Result<(), ErrorCode> {
         crate::modules::circuit_breaker::require_closed(&e)?;
         crate::modules::voting::cast_vote(&e, voter, market_id, outcome, weight)
     }
@@ -92,12 +101,19 @@ impl PredictIQ {
         crate::modules::disputes::file_dispute(&e, disciplinarian, market_id)
     }
 
-    pub fn set_circuit_breaker(e: Env, state: crate::types::CircuitBreakerState) -> Result<(), ErrorCode> {
+    pub fn set_circuit_breaker(
+        e: Env,
+        state: crate::types::CircuitBreakerState,
+    ) -> Result<(), ErrorCode> {
         crate::modules::circuit_breaker::set_state(&e, state)
     }
 
     pub fn set_base_fee(e: Env, amount: i128) -> Result<(), ErrorCode> {
         crate::modules::fees::set_base_fee(&e, amount)
+    }
+
+    pub fn get_base_fee(e: Env) -> i128 {
+        crate::modules::fees::get_base_fee(&e)
     }
 
     pub fn get_revenue(e: Env, token: Address) -> i128 {
@@ -124,46 +140,123 @@ impl PredictIQ {
         Ok(())
     }
 
-    pub fn set_governance_token(e: Env, token: Address) -> Result<(), ErrorCode> {
+    pub fn set_guardian(e: Env, guardian: Address) -> Result<(), ErrorCode> {
+        crate::modules::admin::set_guardian(&e, guardian)
+    }
+
+    pub fn get_guardian(e: Env) -> Option<Address> {
+        crate::modules::admin::get_guardian(&e)
+    }
+
+    pub fn pause(e: Env) -> Result<(), ErrorCode> {
+        crate::modules::circuit_breaker::pause(&e)
+    }
+
+    pub fn unpause(e: Env) -> Result<(), ErrorCode> {
+        crate::modules::circuit_breaker::unpause(&e)
+    }
+
+    pub fn claim_winnings(
+        e: Env,
+        bettor: Address,
+        market_id: u64,
+        token_address: Address,
+    ) -> Result<i128, ErrorCode> {
+        crate::modules::bets::claim_winnings(&e, bettor, market_id, token_address)
+    }
+
+    pub fn withdraw_refund(
+        e: Env,
+        bettor: Address,
+        market_id: u64,
+        token_address: Address,
+    ) -> Result<i128, ErrorCode> {
+        crate::modules::bets::withdraw_refund(&e, bettor, market_id, token_address)
+    }
+
+    pub fn resolve_market(e: Env, market_id: u64, winning_outcome: u32) -> Result<(), ErrorCode> {
         crate::modules::admin::require_admin(&e)?;
-        e.storage().instance().set(&ConfigKey::GovernanceToken, &token);
-        Ok(())
+        crate::modules::disputes::resolve_market(&e, market_id, winning_outcome)
     }
 
-    pub fn unlock_tokens(e: Env, voter: Address, market_id: u64) -> Result<(), ErrorCode> {
-        crate::modules::voting::unlock_tokens(&e, voter, market_id)
+    pub fn get_resolution_metrics(
+        e: Env,
+        market_id: u64,
+        outcome: u32,
+    ) -> crate::modules::disputes::ResolutionMetrics {
+        crate::modules::disputes::get_resolution_metrics(&e, market_id, outcome)
     }
 
-    pub fn attempt_oracle_resolution(e: Env, market_id: u64) -> Result<(), ErrorCode> {
-        crate::modules::circuit_breaker::require_closed(&e)?;
-        crate::modules::resolution::attempt_oracle_resolution(&e, market_id)
+    pub fn set_creator_reputation(
+        e: Env,
+        creator: Address,
+        reputation: crate::types::CreatorReputation,
+    ) -> Result<(), ErrorCode> {
+        crate::modules::markets::set_creator_reputation(&e, creator, reputation)
     }
 
-    pub fn finalize_resolution(e: Env, market_id: u64) -> Result<(), ErrorCode> {
-        crate::modules::circuit_breaker::require_closed(&e)?;
-        crate::modules::resolution::finalize_resolution(&e, market_id)
+    pub fn get_creator_reputation(e: Env, creator: Address) -> crate::types::CreatorReputation {
+        crate::modules::markets::get_creator_reputation(&e, &creator)
     }
 
-    pub fn cancel_market_admin(e: Env, market_id: u64) -> Result<(), ErrorCode> {
-        crate::modules::cancellation::cancel_market_admin(&e, market_id)
+    pub fn set_creation_deposit(e: Env, amount: i128) -> Result<(), ErrorCode> {
+        crate::modules::markets::set_creation_deposit(&e, amount)
     }
 
-    pub fn cancel_market_vote(e: Env, market_id: u64) -> Result<(), ErrorCode> {
-        crate::modules::cancellation::cancel_market_vote(&e, market_id)
+    pub fn get_creation_deposit(e: Env) -> i128 {
+        crate::modules::markets::get_creation_deposit(&e)
     }
 
-    pub fn withdraw_refund(e: Env, bettor: Address, market_id: u64) -> Result<i128, ErrorCode> {
-        crate::modules::cancellation::withdraw_refund(&e, bettor, market_id)
+    pub fn release_creation_deposit(
+        e: Env,
+        market_id: u64,
+        native_token: Address,
+    ) -> Result<(), ErrorCode> {
+        crate::modules::markets::release_creation_deposit(&e, market_id, native_token)
     }
 
-    /// Check if market's prize pool was clawed back and auto-cancel if detected
-    pub fn check_clawback(e: Env, market_id: u64) -> Result<(), ErrorCode> {
-        let market = crate::modules::markets::get_market(&e, market_id)
-            .ok_or(ErrorCode::MarketNotFound)?;
-        
-        // Detect if balance was clawed back
-        crate::modules::sac::detect_clawback(&e, &market.token_address, market.total_staked)?;
-        
-        Ok(())
+    // Governance and Upgrade Functions
+    pub fn initialize_guardians(
+        e: Env,
+        guardians: Vec<crate::types::Guardian>,
+    ) -> Result<(), ErrorCode> {
+        crate::modules::admin::require_admin(&e)?;
+        crate::modules::governance::initialize_guardians(&e, guardians)
+    }
+
+    pub fn add_guardian(e: Env, guardian: crate::types::Guardian) -> Result<(), ErrorCode> {
+        crate::modules::governance::add_guardian(&e, guardian)
+    }
+
+    pub fn remove_guardian(e: Env, address: Address) -> Result<(), ErrorCode> {
+        crate::modules::governance::remove_guardian(&e, address)
+    }
+
+    pub fn get_guardians(e: Env) -> Vec<crate::types::Guardian> {
+        crate::modules::governance::get_guardians(&e)
+    }
+
+    pub fn initiate_upgrade(e: Env, wasm_hash: String) -> Result<(), ErrorCode> {
+        crate::modules::governance::initiate_upgrade(&e, wasm_hash)
+    }
+
+    pub fn vote_for_upgrade(e: Env, voter: Address, vote_for: bool) -> Result<bool, ErrorCode> {
+        crate::modules::governance::vote_for_upgrade(&e, voter, vote_for)
+    }
+
+    pub fn execute_upgrade(e: Env) -> Result<String, ErrorCode> {
+        crate::modules::governance::execute_upgrade(&e)
+    }
+
+    pub fn get_pending_upgrade(e: Env) -> Option<crate::types::PendingUpgrade> {
+        crate::modules::governance::get_pending_upgrade(&e)
+    }
+
+    pub fn get_upgrade_votes(e: Env) -> Result<(u32, u32), ErrorCode> {
+        crate::modules::governance::get_upgrade_votes(&e)
+    }
+
+    pub fn is_timelock_satisfied(e: Env) -> Result<bool, ErrorCode> {
+        crate::modules::governance::is_timelock_satisfied(&e)
     }
 }

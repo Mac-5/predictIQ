@@ -1,7 +1,7 @@
-use soroban_sdk::{Env, Address, Symbol, contracttype};
-use crate::types::{Bet, MarketStatus};
-use crate::modules::{markets, sac};
 use crate::errors::ErrorCode;
+use crate::modules::markets;
+use crate::types::{Bet, MarketStatus};
+use soroban_sdk::{contracttype, token, Address, Env};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -20,10 +20,32 @@ pub fn place_bet(
 ) -> Result<(), ErrorCode> {
     bettor.require_auth();
 
+    // Check if contract is paused - high-risk operation
+    crate::modules::circuit_breaker::require_not_paused_for_high_risk(e)?;
+
     let mut market = markets::get_market(e, market_id).ok_or(ErrorCode::MarketNotFound)?;
-    
+
     if market.status != MarketStatus::Active {
         return Err(ErrorCode::MarketNotActive);
+    }
+
+    // Validate parent market conditions for conditional markets
+    if market.parent_id > 0 {
+        let parent_market =
+            markets::get_market(e, market.parent_id).ok_or(ErrorCode::MarketNotFound)?;
+
+        // Parent must be resolved
+        if parent_market.status != MarketStatus::Resolved {
+            return Err(ErrorCode::ParentMarketNotResolved);
+        }
+
+        // Parent must have resolved to the required outcome
+        let parent_winning_outcome = parent_market
+            .winning_outcome
+            .ok_or(ErrorCode::ParentMarketNotResolved)?;
+        if parent_winning_outcome != market.parent_outcome_idx {
+            return Err(ErrorCode::ParentMarketInvalidOutcome);
+        }
     }
 
     if e.ledger().timestamp() >= market.deadline {
@@ -63,23 +85,100 @@ pub fn place_bet(
     e.storage().persistent().set(&bet_key, &existing_bet);
     markets::update_market(e, market);
 
-    // Process referral reward if referrer provided
-    if let Some(ref_addr) = referrer {
-        let fee = crate::modules::fees::calculate_fee(e, amount);
-        crate::modules::fees::add_referral_reward(e, &ref_addr, fee);
-    }
+    // Emit standardized BetPlaced event
+    // Topics: [BetPlaced, market_id, bettor]
+    crate::modules::events::emit_bet_placed(e, market_id, bettor, outcome, amount);
 
-    // Event format: (Topic, MarketID, SubjectAddr, Data)
-    e.events().publish(
-        (Symbol::new(e, "bet_placed"), market_id, bettor),
-        amount,
-    );
-    
     Ok(())
 }
 
 pub fn get_bet(e: &Env, market_id: u64, bettor: Address) -> Option<Bet> {
-    e.storage().persistent().get(&DataKey::Bet(market_id, bettor))
+    e.storage()
+        .persistent()
+        .get(&DataKey::Bet(market_id, bettor))
+}
+
+pub fn claim_winnings(
+    e: &Env,
+    bettor: Address,
+    market_id: u64,
+    token_address: Address,
+) -> Result<i128, ErrorCode> {
+    bettor.require_auth();
+
+    let market = markets::get_market(e, market_id).ok_or(ErrorCode::MarketNotFound)?;
+
+    if market.status != MarketStatus::Resolved {
+        return Err(ErrorCode::MarketNotPendingResolution);
+    }
+
+    let winning_outcome = market
+        .winning_outcome
+        .ok_or(ErrorCode::MarketNotPendingResolution)?;
+
+    let bet_key = DataKey::Bet(market_id, bettor.clone());
+    let bet: Bet = e
+        .storage()
+        .persistent()
+        .get(&bet_key)
+        .ok_or(ErrorCode::MarketNotFound)?;
+
+    if bet.outcome != winning_outcome {
+        return Err(ErrorCode::InvalidOutcome);
+    }
+
+    // Calculate winnings (simplified - in production would calculate based on pool ratios)
+    let winnings = bet.amount;
+
+    // Transfer winnings to bettor
+    let client = token::Client::new(e, &token_address);
+    client.transfer(&e.current_contract_address(), &bettor, &winnings);
+
+    // Remove bet record
+    e.storage().persistent().remove(&bet_key);
+
+    // Emit standardized RewardsClaimed event
+    // Topics: [RewardsClaimed, market_id, bettor]
+    crate::modules::events::emit_rewards_claimed(e, market_id, bettor, winnings, false);
+
+    Ok(winnings)
+}
+
+pub fn withdraw_refund(
+    e: &Env,
+    bettor: Address,
+    market_id: u64,
+    token_address: Address,
+) -> Result<i128, ErrorCode> {
+    bettor.require_auth();
+
+    let market = markets::get_market(e, market_id).ok_or(ErrorCode::MarketNotFound)?;
+
+    if market.status != MarketStatus::Cancelled {
+        return Err(ErrorCode::MarketNotActive);
+    }
+
+    let bet_key = DataKey::Bet(market_id, bettor.clone());
+    let bet: Bet = e
+        .storage()
+        .persistent()
+        .get(&bet_key)
+        .ok_or(ErrorCode::MarketNotFound)?;
+
+    let refund_amount = bet.amount;
+
+    // Transfer refund to bettor
+    let client = token::Client::new(e, &token_address);
+    client.transfer(&e.current_contract_address(), &bettor, &refund_amount);
+
+    // Remove bet record
+    e.storage().persistent().remove(&bet_key);
+
+    // Emit standardized RewardsClaimed event (refund variant)
+    // Topics: [RewardsClaimed, market_id, bettor]
+    crate::modules::events::emit_rewards_claimed(e, market_id, bettor, refund_amount, true);
+
+    Ok(refund_amount)
 }
 
 pub fn claim_winnings(

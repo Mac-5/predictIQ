@@ -1,11 +1,11 @@
-use soroban_sdk::{Env, Address, Symbol, contracttype, token, IntoVal, Val, TryFromVal};
-use crate::types::{Vote, MarketStatus, ConfigKey, LockedTokens};
-use crate::modules::markets;
 use crate::errors::ErrorCode;
+use crate::modules::markets;
+use crate::types::{MarketStatus, Vote};
+use soroban_sdk::{contracttype, Address, Env};
 
 #[contracttype]
 pub enum DataKey {
-    Vote(u64, Address), // market_id, voter
+    Vote(u64, Address),  // market_id, voter
     VoteTally(u64, u32), // market_id, outcome -> total_weight
     LockedTokens(u64, Address), // market_id, voter
 }
@@ -20,7 +20,7 @@ pub fn cast_vote(
     voter.require_auth();
 
     let market = markets::get_market(e, market_id).ok_or(ErrorCode::MarketNotFound)?;
-    
+
     if market.status != MarketStatus::Disputed {
         return Err(ErrorCode::MarketNotDisputed);
     }
@@ -84,12 +84,10 @@ pub fn cast_vote(
     current_tally += actual_weight;
     e.storage().persistent().set(&tally_key, &current_tally);
 
-    // Event format: (Topic, MarketID, SubjectAddr, Data)
-    e.events().publish(
-        (Symbol::new(e, "vote_cast"), market_id, voter),
-        outcome,
-    );
-    
+    // Emit standardized VoteCast event
+    // Topics: [VoteCast, market_id, voter]
+    crate::modules::events::emit_vote_cast(e, market_id, voter, outcome, weight);
+
     Ok(())
 }
 
@@ -128,5 +126,8 @@ pub fn unlock_tokens(e: &Env, voter: Address, market_id: u64) -> Result<(), Erro
 }
 
 pub fn get_tally(e: &Env, market_id: u64, outcome: u32) -> i128 {
-    e.storage().persistent().get(&DataKey::VoteTally(market_id, outcome)).unwrap_or(0)
+    e.storage()
+        .persistent()
+        .get(&DataKey::VoteTally(market_id, outcome))
+        .unwrap_or(0)
 }
