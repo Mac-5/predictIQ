@@ -1,11 +1,13 @@
-use soroban_sdk::Env;
-use crate::types::{ConfigKey, CircuitBreakerState};
-use crate::modules::admin;
 use crate::errors::ErrorCode;
+use crate::modules::admin;
+use crate::types::{CircuitBreakerState, ConfigKey};
+use soroban_sdk::Env;
 
 pub fn set_state(e: &Env, state: CircuitBreakerState) -> Result<(), ErrorCode> {
     admin::require_admin(e)?;
-    e.storage().persistent().set(&ConfigKey::CircuitBreakerState, &state);
+    e.storage()
+        .persistent()
+        .set(&ConfigKey::CircuitBreakerState, &state);
 
     // Emit standardized CircuitBreakerTriggered event
     // Topics: [CircuitBreakerTriggered, 0, contract_address]
@@ -17,12 +19,15 @@ pub fn set_state(e: &Env, state: CircuitBreakerState) -> Result<(), ErrorCode> {
         CircuitBreakerState::Paused => soroban_sdk::String::from_str(e, "paused"),
     };
     crate::modules::events::emit_circuit_breaker_triggered(e, contract_addr, state_str);
-    
+
     Ok(())
 }
 
 pub fn get_state(e: &Env) -> CircuitBreakerState {
-    e.storage().persistent().get(&ConfigKey::CircuitBreakerState).unwrap_or(CircuitBreakerState::Closed)
+    e.storage()
+        .persistent()
+        .get(&ConfigKey::CircuitBreakerState)
+        .unwrap_or(CircuitBreakerState::Closed)
 }
 
 pub fn require_closed(e: &Env) -> Result<(), ErrorCode> {
@@ -38,8 +43,11 @@ pub fn require_closed(e: &Env) -> Result<(), ErrorCode> {
 
 pub fn pause(e: &Env) -> Result<(), ErrorCode> {
     admin::require_guardian(e)?;
-    e.storage().persistent().set(&ConfigKey::CircuitBreakerState, &CircuitBreakerState::Paused);
-    
+    e.storage().persistent().set(
+        &ConfigKey::CircuitBreakerState,
+        &CircuitBreakerState::Paused,
+    );
+
     // Emit standardized CircuitBreakerTriggered event
     let contract_addr = e.current_contract_address();
     crate::modules::events::emit_circuit_breaker_triggered(
@@ -47,14 +55,17 @@ pub fn pause(e: &Env) -> Result<(), ErrorCode> {
         contract_addr,
         soroban_sdk::String::from_str(e, "paused"),
     );
-    
+
     Ok(())
 }
 
 pub fn unpause(e: &Env) -> Result<(), ErrorCode> {
     admin::require_guardian(e)?;
-    e.storage().persistent().set(&ConfigKey::CircuitBreakerState, &CircuitBreakerState::Closed);
-    
+    e.storage().persistent().set(
+        &ConfigKey::CircuitBreakerState,
+        &CircuitBreakerState::Closed,
+    );
+
     // Emit standardized CircuitBreakerTriggered event
     let contract_addr = e.current_contract_address();
     crate::modules::events::emit_circuit_breaker_triggered(
@@ -62,7 +73,7 @@ pub fn unpause(e: &Env) -> Result<(), ErrorCode> {
         contract_addr,
         soroban_sdk::String::from_str(e, "closed"),
     );
-    
+
     Ok(())
 }
 

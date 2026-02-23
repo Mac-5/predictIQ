@@ -26,13 +26,15 @@ pub struct Market {
     pub payout_mode: PayoutMode, // New: determines push vs pull payouts
     pub tier: MarketTier,
     pub creation_deposit: i128,
+    pub parent_id: u64,          // 0 means no parent (independent market)
+    pub parent_outcome_idx: u32, // Required outcome of parent market
 }
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PayoutMode {
-    Push,  // Contract distributes to all winners (small markets)
-    Pull,  // Winners claim individually (large markets)
+    Push, // Contract distributes to all winners (small markets)
+    Pull, // Winners claim individually (large markets)
 }
 
 #[contracttype]
@@ -126,4 +128,3 @@ pub struct PendingUpgrade {
 // Constants for upgrade governance
 pub const TIMELOCK_DURATION: u64 = 48 * 60 * 60; // 48 hours in seconds
 pub const MAJORITY_THRESHOLD_PERCENT: u32 = 51; // 51% for majority
-

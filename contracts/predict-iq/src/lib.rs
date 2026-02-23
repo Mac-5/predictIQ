@@ -1,14 +1,14 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, Env, Address, String, Vec};
+use soroban_sdk::{contract, contractimpl, Address, Env, String, Vec};
 
-pub mod types;
 mod errors;
 mod modules;
 mod test;
+pub mod types;
 
-use crate::types::{ConfigKey, CircuitBreakerState};
-use crate::modules::admin;
 use crate::errors::ErrorCode;
+use crate::modules::admin;
+use crate::types::{CircuitBreakerState, ConfigKey};
 
 #[contract]
 pub struct PredictIQ;
@@ -19,10 +19,13 @@ impl PredictIQ {
         if e.storage().persistent().has(&ConfigKey::Admin) {
             return Err(ErrorCode::AlreadyInitialized);
         }
-        
+
         admin::set_admin(&e, admin);
         e.storage().persistent().set(&ConfigKey::BaseFee, &base_fee);
-        e.storage().persistent().set(&ConfigKey::CircuitBreakerState, &CircuitBreakerState::Closed);
+        e.storage().persistent().set(
+            &ConfigKey::CircuitBreakerState,
+            &CircuitBreakerState::Closed,
+        );
         Ok(())
     }
 
@@ -40,6 +43,8 @@ impl PredictIQ {
         oracle_config: crate::types::OracleConfig,
         tier: crate::types::MarketTier,
         native_token: Address,
+        parent_id: u64,
+        parent_outcome_idx: u32,
     ) -> Result<u64, ErrorCode> {
         crate::modules::markets::create_market(
             &e,
@@ -51,6 +56,8 @@ impl PredictIQ {
             oracle_config,
             tier,
             native_token,
+            parent_id,
+            parent_outcome_idx,
         )
     }
 
@@ -69,7 +76,13 @@ impl PredictIQ {
         crate::modules::markets::get_market(&e, id)
     }
 
-    pub fn cast_vote(e: Env, voter: Address, market_id: u64, outcome: u32, weight: i128) -> Result<(), ErrorCode> {
+    pub fn cast_vote(
+        e: Env,
+        voter: Address,
+        market_id: u64,
+        outcome: u32,
+        weight: i128,
+    ) -> Result<(), ErrorCode> {
         crate::modules::circuit_breaker::require_closed(&e)?;
         crate::modules::voting::cast_vote(&e, voter, market_id, outcome, weight)
     }
@@ -79,7 +92,10 @@ impl PredictIQ {
         crate::modules::disputes::file_dispute(&e, disciplinarian, market_id)
     }
 
-    pub fn set_circuit_breaker(e: Env, state: crate::types::CircuitBreakerState) -> Result<(), ErrorCode> {
+    pub fn set_circuit_breaker(
+        e: Env,
+        state: crate::types::CircuitBreakerState,
+    ) -> Result<(), ErrorCode> {
         crate::modules::circuit_breaker::set_state(&e, state)
     }
 
@@ -140,11 +156,7 @@ impl PredictIQ {
         crate::modules::bets::withdraw_refund(&e, bettor, market_id, token_address)
     }
 
-    pub fn resolve_market(
-        e: Env,
-        market_id: u64,
-        winning_outcome: u32,
-    ) -> Result<(), ErrorCode> {
+    pub fn resolve_market(e: Env, market_id: u64, winning_outcome: u32) -> Result<(), ErrorCode> {
         crate::modules::admin::require_admin(&e)?;
         crate::modules::disputes::resolve_market(&e, market_id, winning_outcome)
     }
@@ -177,12 +189,19 @@ impl PredictIQ {
         crate::modules::markets::get_creation_deposit(&e)
     }
 
-    pub fn release_creation_deposit(e: Env, market_id: u64, native_token: Address) -> Result<(), ErrorCode> {
+    pub fn release_creation_deposit(
+        e: Env,
+        market_id: u64,
+        native_token: Address,
+    ) -> Result<(), ErrorCode> {
         crate::modules::markets::release_creation_deposit(&e, market_id, native_token)
     }
 
     // Governance and Upgrade Functions
-    pub fn initialize_guardians(e: Env, guardians: Vec<crate::types::Guardian>) -> Result<(), ErrorCode> {
+    pub fn initialize_guardians(
+        e: Env,
+        guardians: Vec<crate::types::Guardian>,
+    ) -> Result<(), ErrorCode> {
         crate::modules::admin::require_admin(&e)?;
         crate::modules::governance::initialize_guardians(&e, guardians)
     }

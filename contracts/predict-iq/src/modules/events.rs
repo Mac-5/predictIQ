@@ -1,12 +1,12 @@
-use soroban_sdk::{Env, Address, symbol_short};
+use soroban_sdk::{symbol_short, Address, Env};
 
 /// Standardized Event Emission Module
-/// 
+///
 /// Event Topic Layout:
 /// - Topic 0: Event Name (short symbol, max 9 chars)
 /// - Topic 1: market_id (u64) - primary identifier for indexers
 /// - Topic 2: Triggering Address - who initiated the action
-/// 
+///
 /// This standardization ensures external indexers can perfectly reconstruct
 /// market states by following a consistent event schema.
 
@@ -22,11 +22,7 @@ pub fn emit_market_created(
     deadline: u64,
 ) {
     e.events().publish(
-        (
-            symbol_short!("mkt_creat"),
-            market_id,
-            creator,
-        ),
+        (symbol_short!("mkt_creat"), market_id, creator),
         (description, num_outcomes, deadline),
     );
 }
@@ -34,19 +30,9 @@ pub fn emit_market_created(
 /// Emit BetPlaced event
 /// Topics: [bet_place, market_id, bettor]
 /// Data: (outcome, amount)
-pub fn emit_bet_placed(
-    e: &Env,
-    market_id: u64,
-    bettor: Address,
-    outcome: u32,
-    amount: i128,
-) {
+pub fn emit_bet_placed(e: &Env, market_id: u64, bettor: Address, outcome: u32, amount: i128) {
     e.events().publish(
-        (
-            symbol_short!("bet_place"),
-            market_id,
-            bettor,
-        ),
+        (symbol_short!("bet_place"), market_id, bettor),
         (outcome, amount),
     );
 }
@@ -54,18 +40,9 @@ pub fn emit_bet_placed(
 /// Emit DisputeFiled event
 /// Topics: [disp_file, market_id, disciplinarian]
 /// Data: (new_deadline)
-pub fn emit_dispute_filed(
-    e: &Env,
-    market_id: u64,
-    disciplinarian: Address,
-    new_deadline: u64,
-) {
+pub fn emit_dispute_filed(e: &Env, market_id: u64, disciplinarian: Address, new_deadline: u64) {
     e.events().publish(
-        (
-            symbol_short!("disp_file"),
-            market_id,
-            disciplinarian,
-        ),
+        (symbol_short!("disp_file"), market_id, disciplinarian),
         new_deadline,
     );
 }
@@ -81,11 +58,7 @@ pub fn emit_resolution_finalized(
     total_payout: i128,
 ) {
     e.events().publish(
-        (
-            symbol_short!("resolv_fx"),
-            market_id,
-            resolver,
-        ),
+        (symbol_short!("resolv_fx"), market_id, resolver),
         (winning_outcome, total_payout),
     );
 }
@@ -101,11 +74,7 @@ pub fn emit_rewards_claimed(
     is_refund: bool,
 ) {
     e.events().publish(
-        (
-            symbol_short!("reward_fx"),
-            market_id,
-            claimer,
-        ),
+        (symbol_short!("reward_fx"), market_id, claimer),
         (amount, is_refund),
     );
 }
@@ -113,19 +82,9 @@ pub fn emit_rewards_claimed(
 /// Emit VoteCast event for governance
 /// Topics: [vote_cast, market_id, voter]
 /// Data: (outcome, weight)
-pub fn emit_vote_cast(
-    e: &Env,
-    market_id: u64,
-    voter: Address,
-    outcome: u32,
-    weight: i128,
-) {
+pub fn emit_vote_cast(e: &Env, market_id: u64, voter: Address, outcome: u32, weight: i128) {
     e.events().publish(
-        (
-            symbol_short!("vote_cast"),
-            market_id,
-            voter,
-        ),
+        (symbol_short!("vote_cast"), market_id, voter),
         (outcome, weight),
     );
 }
@@ -138,31 +97,16 @@ pub fn emit_circuit_breaker_triggered(
     contract_address: Address,
     state: soroban_sdk::String,
 ) {
-    e.events().publish(
-        (
-            symbol_short!("cb_state"),
-            0u64,
-            contract_address,
-        ),
-        state,
-    );
+    e.events()
+        .publish((symbol_short!("cb_state"), 0u64, contract_address), state);
 }
 
 /// Emit OracleResultSet event
 /// Topics: [oracle_ok, market_id, oracle_address]
 /// Data: (outcome)
-pub fn emit_oracle_result_set(
-    e: &Env,
-    market_id: u64,
-    oracle_address: Address,
-    outcome: u32,
-) {
+pub fn emit_oracle_result_set(e: &Env, market_id: u64, oracle_address: Address, outcome: u32) {
     e.events().publish(
-        (
-            symbol_short!("oracle_ok"),
-            market_id,
-            oracle_address,
-        ),
+        (symbol_short!("oracle_ok"), market_id, oracle_address),
         outcome,
     );
 }
