@@ -20,6 +20,7 @@ pub fn safe_transfer(
                 (symbol_short!("xfer_fail"), from.clone(), to.clone()),
                 (token_address.clone(), *amount),
             );
+            crate::modules::monitoring::track_error(e);
             ErrorCode::TransferFailed
         })?
         .map_err(|_| {
@@ -27,6 +28,7 @@ pub fn safe_transfer(
                 (symbol_short!("xfer_fail"), from.clone(), to.clone()),
                 (token_address.clone(), *amount),
             );
+            crate::modules::monitoring::track_error(e);
             ErrorCode::TransferFailed
         })
 }
