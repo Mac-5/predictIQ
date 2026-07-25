@@ -196,8 +196,8 @@ pub fn create_market_with_dispute_window(
         let treasury = get_protocol_treasury(e);
         token_client.transfer(&creator, &treasury, &creation_fee);
 
-        // Emit fee collection event
-        crate::modules::events::emit_fee_collected(e, 0, treasury, creation_fee);
+        // Emit fee collection event, identifying both the token and the actual recipient
+        crate::modules::events::emit_fee_collected(e, 0, native_token.clone(), treasury, creation_fee);
     }
 
     // Lock deposit if required
